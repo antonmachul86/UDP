@@ -10,4 +10,5 @@ type Network interface {
 	ReceiveFrom(timeout time.Duration) ([]byte, net.Addr, error)
 	Close() error
 	LocalAddr() string
+	SetReadBufferSize(bytes int) error
 }

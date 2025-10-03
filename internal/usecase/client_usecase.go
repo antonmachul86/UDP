@@ -18,10 +18,11 @@ type ClientUsecase struct {
 	totalPackets uint32
 	numWorkers   int
 
-	packetId    uint32
-	ackReceived sync.Map
-	printedId   uint32
-	mu          sync.Mutex
+	packetId     uint32
+	ackReceived  sync.Map
+	printedId    uint32
+	mu           sync.Mutex
+	stopPrinting chan bool
 }
 
 func NewClientUsecase(
@@ -37,6 +38,7 @@ func NewClientUsecase(
 		rand:         rand,
 		totalPackets: totalPackets,
 		numWorkers:   numWorkers,
+		stopPrinting: make(chan bool, 1),
 	}
 }
 
@@ -54,7 +56,10 @@ func (c *ClientUsecase) Run() {
 	}
 
 	wg.Wait()
-	time.Sleep(2 * time.Second)
+	time.Sleep(10 * time.Second)
+
+	// Stop the real-time printer and print the final summary
+	c.stopPrinting <- true
 	c.printRemaining()
 }
 func (c *ClientUsecase) worker() {
@@ -77,45 +82,64 @@ func (c *ClientUsecase) worker() {
 			Data:      data,
 		}
 		pkt.Checksum = pkt.ComputeChecksum()
-		//error???
+
 		data, _ = json.Marshal(pkt)
 		c.network.SendTo("", data)
 	}
 }
-func (c *ClientUsecase) printRemaining() {
-	for i := uint32(1); i < c.totalPackets; i++ {
-		if _, ok := c.ackReceived.Load(i); ok {
-			fmt.Printf("Packet %d: LOST\n", i)
-		}
+func (c *ClientUsecase) HandleAck(data []byte) {
+	var ack entities.Ack
+	if err := json.Unmarshal(data, &ack); err != nil {
+		return
 	}
+	c.ackReceived.Store(ack.ID, ack)
 }
-
-//todo
-//func (c *ClientUsecase)
 
 func (c *ClientUsecase) printAcksInOrder() {
 	for {
-		c.mu.Lock()
-		next := c.printedId + 1
-		if ack, ok := c.ackReceived.Load(next); ok {
-			c.ackReceived.Delete(next)
-			c.printedId = next
-			c.mu.Unlock()
-
-			a := ack.(entities.Ack)
-			status := "OK"
-			if !a.OK {
-				status = "CORRUPT"
-			}
-			fmt.Printf("Packet %d: %s\n", next, status)
-		} else {
-			c.mu.Unlock()
-			time.Sleep(10 * time.Microsecond)
-		}
-
-		if c.printedId >= c.totalPackets {
+		select {
+		case <-c.stopPrinting:
 			return
+		default:
+			c.mu.Lock()
+			next := c.printedId + 1
+			if ack, ok := c.ackReceived.Load(next); ok {
+				// c.ackReceived.Delete(next) // Deleting breaks the loss calculation
+				c.printedId = next
+				c.mu.Unlock()
+
+				a := ack.(entities.Ack)
+				status := "OK"
+				if !a.OK {
+					status = "CORRUPT"
+				}
+				fmt.Printf("Packet %d: %s\n", next, status)
+			} else {
+				c.mu.Unlock()
+				time.Sleep(10 * time.Microsecond)
+			}
+
+			if c.printedId >= c.totalPackets {
+				return
+			}
 		}
 	}
 
+}
+
+func (c *ClientUsecase) printRemaining() {
+	// After everything, check which ACKs were never received.
+	lostPackets := 0
+	for i := uint32(1); i <= c.totalPackets; i++ {
+		if _, ok := c.ackReceived.Load(i); !ok {
+			fmt.Printf("Packet %d: LOST\n", i)
+			lostPackets++
+		}
+	}
+
+	lossPercentage := float64(lostPackets) / float64(c.totalPackets) * 100
+	fmt.Printf("\n--- Summary ---\n")
+	fmt.Printf("Total packets: %d\n", c.totalPackets)
+	fmt.Printf("Lost packets: %d\n", lostPackets)
+	fmt.Printf("Packet loss: %.2f%%\n", lossPercentage)
 }

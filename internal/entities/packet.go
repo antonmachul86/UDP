@@ -1,9 +1,10 @@
 package entities
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"time"
 )
 
@@ -15,12 +16,19 @@ type Packet struct {
 }
 
 func (p *Packet) ComputeChecksum() string {
-	tmp := p.Checksum
-	p.Checksum = ""
-	data, _ := json.Marshal(p)
-	p.Checksum = tmp
+	var buf bytes.Buffer
 
-	h := sha256.Sum256(data)
+	// Write ID (uint32)
+	binary.Write(&buf, binary.BigEndian, p.ID)
+
+	// Write Timestamp (as UnixNano)
+	binary.Write(&buf, binary.BigEndian, p.Timestamp.UnixNano())
+
+	// Write Data
+	buf.Write(p.Data)
+
+	// Hash the buffer's bytes
+	h := sha256.Sum256(buf.Bytes())
 	return hex.EncodeToString(h[:])
 }
 
