@@ -18,16 +18,12 @@ type Packet struct {
 func (p *Packet) ComputeChecksum() string {
 	var buf bytes.Buffer
 
-	// Write ID (uint32)
 	binary.Write(&buf, binary.BigEndian, p.ID)
 
-	// Write Timestamp (as UnixNano)
 	binary.Write(&buf, binary.BigEndian, p.Timestamp.UnixNano())
 
-	// Write Data
 	buf.Write(p.Data)
 
-	// Hash the buffer's bytes
 	h := sha256.Sum256(buf.Bytes())
 	return hex.EncodeToString(h[:])
 }

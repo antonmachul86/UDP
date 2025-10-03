@@ -58,7 +58,6 @@ func (c *ClientUsecase) Run() {
 	wg.Wait()
 	time.Sleep(10 * time.Second)
 
-	// Stop the real-time printer and print the final summary
 	c.stopPrinting <- true
 	c.printRemaining()
 }
@@ -85,6 +84,7 @@ func (c *ClientUsecase) worker() {
 
 		data, _ = json.Marshal(pkt)
 		c.network.SendTo("", data)
+		time.Sleep(100 * time.Microsecond)
 	}
 }
 func (c *ClientUsecase) HandleAck(data []byte) {
@@ -104,7 +104,6 @@ func (c *ClientUsecase) printAcksInOrder() {
 			c.mu.Lock()
 			next := c.printedId + 1
 			if ack, ok := c.ackReceived.Load(next); ok {
-				// c.ackReceived.Delete(next) // Deleting breaks the loss calculation
 				c.printedId = next
 				c.mu.Unlock()
 
@@ -128,7 +127,6 @@ func (c *ClientUsecase) printAcksInOrder() {
 }
 
 func (c *ClientUsecase) printRemaining() {
-	// After everything, check which ACKs were never received.
 	lostPackets := 0
 	for i := uint32(1); i <= c.totalPackets; i++ {
 		if _, ok := c.ackReceived.Load(i); !ok {

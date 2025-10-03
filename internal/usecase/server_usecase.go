@@ -19,7 +19,6 @@ type ServerUsecase struct {
 	clock      port.Clock
 	numWorkers int
 	jobs       chan serverJob
-	logChan    chan string
 }
 
 func NewServerUsecase(network port.Network, clock port.Clock, numWorkers int) *ServerUsecase {
@@ -28,13 +27,10 @@ func NewServerUsecase(network port.Network, clock port.Clock, numWorkers int) *S
 		clock:      clock,
 		numWorkers: numWorkers,
 		jobs:       make(chan serverJob, 10000),
-		logChan:    make(chan string, 1024),
 	}
 }
 
 func (s *ServerUsecase) Run() {
-	go s.logger()
-
 	for i := 0; i < s.numWorkers; i++ {
 		go s.worker()
 	}
@@ -45,12 +41,6 @@ func (s *ServerUsecase) Run() {
 			continue
 		}
 		s.jobs <- serverJob{data: data, addr: clientAddr}
-	}
-}
-
-func (s *ServerUsecase) logger() {
-	for msg := range s.logChan {
-		fmt.Println(msg)
 	}
 }
 
@@ -66,12 +56,7 @@ func (s *ServerUsecase) worker() {
 
 		logMsg := fmt.Sprintf("Packet %d | Sent: %s | Received: %s | Valid: %t",
 			pkt.ID, pkt.Timestamp.Format(time.RFC3339), recvTime.Format(time.RFC3339), ok)
-		select {
-		case s.logChan <- logMsg:
-			// Sent
-		default:
-			// Drop log message if channel is full
-		}
+		fmt.Println(logMsg)
 
 		ack := entities.Ack{
 			ID:       pkt.ID,
